@@ -1,6 +1,8 @@
-# per deploy altrimenti è stupido
-import os, datetime
-from fastapi import FastAPI, HTTPException
+# main.py  –  backend FastAPI + admin approval
+
+import os, datetime, secrets
+from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
@@ -8,11 +10,10 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from models import Base, TimeSlot, Video
 from storage import new_file_key, presign_put
-import inspect, storage
-print("### STORAGE DEBUG:", storage._client.meta.config.signature_version, storage.__file__)
 
-
-# --------------------------- DB -----------------------------------
+# ------------------------------------------------------------------#
+# DB CONFIG
+# ------------------------------------------------------------------#
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL not set")
@@ -21,21 +22,38 @@ engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 Session = sessionmaker(bind=engine)
 Base.metadata.create_all(engine)
 
-# ------------------------- FastAPI --------------------------------
+# ------------------------------------------------------------------#
+# APP & SECURITY
+# ------------------------------------------------------------------#
 app = FastAPI()
+security = HTTPBasic()
 
-@app.get("/")
-def read_root():
-    return {"status": "ok", "message": "LedWall portal online ✔"}
+ADMIN_USER = "admin"
+ADMIN_PASS = "Fossalta58@"
 
-# --------------------- helper slot logic --------------------------
+
+def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
+    """Confronta user/pass con le costanti sopra (hard-code)."""
+    valid_user = secrets.compare_digest(credentials.username, ADMIN_USER)
+    valid_pass = secrets.compare_digest(credentials.password, ADMIN_PASS)
+    if not (valid_user and valid_pass):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return True
+
+
+# ------------------------------------------------------------------#
+# HELPER FUNZIONI SLOT
+# ------------------------------------------------------------------#
 def round_to_next_5(dt: datetime.datetime) -> datetime.datetime:
     discard = datetime.timedelta(
-        minutes=dt.minute % 5,
-        seconds=dt.second,
-        microseconds=dt.microsecond,
+        minutes=dt.minute % 5, seconds=dt.second, microseconds=dt.microsecond
     )
     return dt - discard + datetime.timedelta(minutes=5)
+
 
 def ensure_slots(db, start_dt: datetime.datetime, end_dt: datetime.datetime):
     ts = round_to_next_5(start_dt)
@@ -52,10 +70,18 @@ def ensure_slots(db, start_dt: datetime.datetime, end_dt: datetime.datetime):
         db.execute(stmt)
         db.commit()
 
-# ------------------------- endpoints -------------------------------
+
+# ------------------------------------------------------------------#
+# PUBLIC ENDPOINTS
+# ------------------------------------------------------------------#
+@app.get("/")
+def read_root():
+    return {"status": "ok", "message": "LedWall portal online ✔"}
+
+
 @app.get("/api/slots")
 def get_free_slots(hours_ahead: int = 24):
-    now   = datetime.datetime.utcnow()
+    now = datetime.datetime.utcnow()
     upper = now + datetime.timedelta(hours=hours_ahead)
     with Session() as db:
         ensure_slots(db, now, upper)
@@ -70,16 +96,20 @@ def get_free_slots(hours_ahead: int = 24):
         )
         slots = db.execute(stmt).scalars().all()
     return [
-        {"id": s.id,
-         "start_utc": s.start_utc.isoformat() + "Z",
-         "free": s.capacity - s.booked}
+        {
+            "id": s.id,
+            "start_utc": s.start_utc.isoformat() + "Z",
+            "free": s.capacity - s.booked,
+        }
         for s in slots
     ]
+
 
 class InitRequest(BaseModel):
     slot_id: int
     phone: str
     original_name: str
+
 
 @app.post("/api/upload_init")
 def upload_init(body: InitRequest):
@@ -109,8 +139,58 @@ def upload_init(body: InitRequest):
 
         url = presign_put(file_key)
 
-    return {
-        "video_id": video.id,
-        "upload_url": url,
-        "file_key": file_key,
-    }
+    return {"video_id": video.id, "upload_url": url, "file_key": file_key}
+
+
+# ------------------------------------------------------------------#
+# ADMIN ENDPOINTS (Basic auth)
+# ------------------------------------------------------------------#
+@app.get("/api/admin/pending", dependencies=[Depends(verify_admin)])
+def list_pending(limit: int = 100):
+    with Session() as db:
+        q = (
+            db.query(Video, TimeSlot)
+            .join(TimeSlot, Video.slot_id == TimeSlot.id)
+            .filter(Video.status == "pending")
+            .order_by(TimeSlot.start_utc)
+            .limit(limit)
+        )
+        return [
+            {
+                "video_id": v.id,
+                "file_key": v.filename,
+                "slot_start_utc": s.start_utc.isoformat() + "Z",
+                "phone": v.phone,
+            }
+            for v, s in q
+        ]
+
+
+class ValidateBody(BaseModel):
+    video_id: int
+    action: str  # "approve" | "reject"
+
+
+@app.post("/api/admin/validate", dependencies=[Depends(verify_admin)])
+def validate_video(body: ValidateBody):
+    if body.action not in {"approve", "reject"}:
+        raise HTTPException(400, "action must be 'approve' or 'reject'")
+
+    with Session() as db:
+        video = db.query(Video).filter_by(id=body.video_id).first()
+        if not video:
+            raise HTTPException(404, "video not found")
+        if video.status != "pending":
+            raise HTTPException(409, "already processed")
+
+        if body.action == "approve":
+            video.status = "approved"
+        else:  # reject
+            video.status = "rejected"
+            slot = db.query(TimeSlot).filter_by(id=video.slot_id).first()
+            if slot and slot.booked > 0:
+                slot.booked -= 1
+
+        db.commit()
+
+    return {"video_id": video.id, "status": video.status}
