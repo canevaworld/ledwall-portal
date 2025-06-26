@@ -12,10 +12,9 @@ class TimeSlot(Base):
 
 class Video(Base):
     __tablename__ = "videos"
-    id = Column(Integer, primary_key=True)
-    slot_id = Column(Integer, ForeignKey("time_slots.id"))
+    id       = Column(Integer, primary_key=True)
+    slot_id  = Column(Integer, ForeignKey("time_slots.id"))
     filename = Column(String, nullable=False)
-    email = Column(String, nullable=False)          #  <— NUOVO
-    status = Column(String, default="pending")
-    phone  = Column(String, nullable=True)          #  facoltativo
-    slot   = relationship("TimeSlot")
+    email    = Column(String, nullable=False)     # <— rimane
+    status   = Column(String, default="pending")
+    slot     = relationship("TimeSlot")
