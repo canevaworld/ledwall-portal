@@ -7,21 +7,21 @@ _BUCKET   = os.getenv("R2_BUCKET")
 _session = boto3.session.Session()
 _client  = _session.client(
     "s3",
+    region_name="auto",                               # ← AGGIUNGI QUESTO
     endpoint_url=_ENDPOINT,
     aws_access_key_id=os.getenv("R2_ACCESS_KEY"),
     aws_secret_access_key=os.getenv("R2_SECRET_KEY"),
-    config=Config(signature_version="s3v4"),   # <— forza SigV4
+    config=Config(signature_version="s3v4"),
 )
 
 def new_file_key(original_name: str) -> str:
-    """Restituisce un nome univoco preservando l’estensione."""
-    ext = (original_name.rsplit(".", 1)[-1]).lower()
+    ext = original_name.rsplit(".", 1)[-1].lower()
     return f"{uuid.uuid4()}.{ext}"
 
 def presign_put(key: str, expires=900) -> str:
-    """Genera un URL PUT presignato valido `expires` secondi."""
     return _client.generate_presigned_url(
         "put_object",
-        Params={"Bucket": _BUCKET, "Key": key, "ACL": "public-read"},
+        Params={"Bucket": _BUCKET, "Key": key},
         ExpiresIn=expires,
+        HttpMethod="PUT",
     )
