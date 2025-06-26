@@ -1,3 +1,4 @@
+# per deploy altrimenti è stupido
 import os, datetime
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
