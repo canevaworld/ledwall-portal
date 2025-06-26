@@ -5,3 +5,4 @@ SQLAlchemy
 psycopg2-binary
 python-multipart
 boto3
+python-telegram-bot==20.7
