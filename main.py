@@ -1,42 +1,31 @@
-import os
-import datetime
-
-from fastapi import FastAPI
+import os, datetime
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from models import Base, TimeSlot   # importa le tue tabelle
+from models import Base, TimeSlot, Video
+from storage import new_file_key, presign_put
 
-# -------------------------------------------------------------------
-# CONFIGURAZIONE DATABASE
-# -------------------------------------------------------------------
+# --------------------------- DB -----------------------------------
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL not set")
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 Session = sessionmaker(bind=engine)
-
-# Crea automaticamente le tabelle se non esistono
 Base.metadata.create_all(engine)
 
-# -------------------------------------------------------------------
-# APP FASTAPI
-# -------------------------------------------------------------------
+# ------------------------- FastAPI --------------------------------
 app = FastAPI()
-
 
 @app.get("/")
 def read_root():
     return {"status": "ok", "message": "LedWall portal online ✔"}
 
-
-# -------------------------------------------------------------------
-# FUNZIONI DI SUPPORTO
-# -------------------------------------------------------------------
+# --------------------- helper slot logic --------------------------
 def round_to_next_5(dt: datetime.datetime) -> datetime.datetime:
-    """Arrotonda (in avanti) al blocco successivo di 5 minuti."""
     discard = datetime.timedelta(
         minutes=dt.minute % 5,
         seconds=dt.second,
@@ -44,18 +33,12 @@ def round_to_next_5(dt: datetime.datetime) -> datetime.datetime:
     )
     return dt - discard + datetime.timedelta(minutes=5)
 
-
 def ensure_slots(db, start_dt: datetime.datetime, end_dt: datetime.datetime):
-    """
-    Inserisce tutti gli slot da 5′ tra start_dt ed end_dt se mancanti,
-    usando INSERT … ON CONFLICT DO NOTHING per evitare duplicati.
-    """
     ts = round_to_next_5(start_dt)
     rows = []
     while ts <= round_to_next_5(end_dt):
         rows.append({"start_utc": ts})
         ts += datetime.timedelta(minutes=5)
-
     if rows:
         stmt = (
             pg_insert(TimeSlot)
@@ -65,24 +48,13 @@ def ensure_slots(db, start_dt: datetime.datetime, end_dt: datetime.datetime):
         db.execute(stmt)
         db.commit()
 
-
-# -------------------------------------------------------------------
-# ENDPOINT API
-# -------------------------------------------------------------------
+# ------------------------- endpoints -------------------------------
 @app.get("/api/slots")
 def get_free_slots(hours_ahead: int = 24):
-    """
-    Ritorna gli slot liberi (con posti < capacity) nelle prossime `hours_ahead` ore.
-    Le date sono in UTC e nel formato ISO-8601.
-    """
-    now = datetime.datetime.utcnow()
+    now   = datetime.datetime.utcnow()
     upper = now + datetime.timedelta(hours=hours_ahead)
-
     with Session() as db:
-        # Crea eventuali slot mancanti in modo atomico
         ensure_slots(db, now, upper)
-
-        # Estrae solo quelli non pieni
         stmt = (
             select(TimeSlot)
             .where(
@@ -93,12 +65,48 @@ def get_free_slots(hours_ahead: int = 24):
             .order_by(TimeSlot.start_utc)
         )
         slots = db.execute(stmt).scalars().all()
-
     return [
-        {
-            "id": s.id,
-            "start_utc": s.start_utc.isoformat() + "Z",
-            "free": s.capacity - s.booked,
-        }
+        {"id": s.id,
+         "start_utc": s.start_utc.isoformat() + "Z",
+         "free": s.capacity - s.booked}
         for s in slots
     ]
+
+class InitRequest(BaseModel):
+    slot_id: int
+    phone: str
+    original_name: str
+
+@app.post("/api/upload_init")
+def upload_init(body: InitRequest):
+    with Session() as db:
+        slot = (
+            db.query(TimeSlot)
+            .with_for_update()
+            .filter_by(id=body.slot_id)
+            .first()
+        )
+        if not slot:
+            raise HTTPException(404, "slot not found")
+        if slot.booked >= slot.capacity:
+            raise HTTPException(409, "slot full")
+
+        file_key = new_file_key(body.original_name)
+        video = Video(
+            phone=body.phone,
+            slot_id=slot.id,
+            filename=file_key,
+            status="pending",
+        )
+        slot.booked += 1
+        db.add(video)
+        db.commit()
+        db.refresh(video)
+
+        url = presign_put(file_key)
+
+    return {
+        "video_id": video.id,
+        "upload_url": url,
+        "file_key": file_key,
+    }
