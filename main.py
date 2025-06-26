@@ -43,7 +43,7 @@ def verify_admin(creds: HTTPBasicCredentials = Depends(security)):
 # ------------------------------------------------------------------#
 # SMTP SETTINGS
 # ------------------------------------------------------------------#
-SMTP_HOST = "smtp.canevaworld.it"
+SMTP_HOST = "smtp.office365.com"
 SMTP_PORT = 587
 SMTP_USER = "noreply@canevaworld.it"
 SMTP_PASS = "Jyb7#NeALsYcWbnf"
