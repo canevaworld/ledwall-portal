@@ -18,3 +18,6 @@ class Video(Base):
     email    = Column(String, nullable=False)     # <— rimane
     status   = Column(String, default="pending")
     slot     = relationship("TimeSlot")
+    client_ip = Column(String)
+    uploaded  = Column(Boolean, default=False)
+    created_at = Column(DateTime, server_default=func.now())
