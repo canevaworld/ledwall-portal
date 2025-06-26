@@ -185,7 +185,7 @@ def validate_video(body: ValidateBody):
 
         if body.action == "approve":
             video.status = "approved"
-        else:  # reject
+        else:
             video.status = "rejected"
             slot = db.query(TimeSlot).filter_by(id=video.slot_id).first()
             if slot and slot.booked > 0:
@@ -193,4 +193,8 @@ def validate_video(body: ValidateBody):
 
         db.commit()
 
-    return {"video_id": video.id, "status": video.status}
+        # ✱✱✱ prendi i valori PRIMA di chiudere la sessione
+        vid   = video.id
+        vstat = video.status
+
+    return {"video_id": vid, "status": vstat}
