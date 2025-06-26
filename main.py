@@ -171,6 +171,32 @@ class ValidateBody(BaseModel):
     action: str  # "approve" | "reject"
 
 
+
+@app.get("/api/admin/videos", dependencies=[Depends(verify_admin)])
+def list_videos(status: str = "pending", limit: int = 100):
+    if status not in {"pending", "approved", "rejected"}:
+        raise HTTPException(400, "status must be pending | approved | rejected")
+    with Session() as db:
+        q = (
+            db.query(Video, TimeSlot)
+            .join(TimeSlot, Video.slot_id == TimeSlot.id)
+            .filter(Video.status == status)
+            .order_by(TimeSlot.start_utc)
+            .limit(limit)
+        )
+        return [
+            {
+                "video_id": v.id,
+                "file_key": v.filename,
+                "status": v.status,
+                "slot_start_utc": s.start_utc.isoformat() + "Z",
+                "phone": v.phone,
+            }
+            for v, s in q
+        ]
+
+
+
 @app.post("/api/admin/validate", dependencies=[Depends(verify_admin)])
 def validate_video(body: ValidateBody):
     if body.action not in {"approve", "reject"}:
