@@ -1,4 +1,4 @@
-# main.py  –  backend FastAPI + admin approval
+# main.py  – LedWall backend + admin + Telegram notify
 
 import os, datetime, secrets
 from fastapi import FastAPI, HTTPException, Depends, status
@@ -8,7 +8,9 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from models import Base, TimeSlot, Video
+from telegram import Bot
+
+from models import Base, TimeSlot, Video, TgChat
 from storage import new_file_key, presign_put
 
 # ------------------------------------------------------------------#
@@ -23,7 +25,7 @@ Session = sessionmaker(bind=engine)
 Base.metadata.create_all(engine)
 
 # ------------------------------------------------------------------#
-# APP & SECURITY
+# APP, SECURITY, TELEGRAM
 # ------------------------------------------------------------------#
 app = FastAPI()
 security = HTTPBasic()
@@ -31,18 +33,34 @@ security = HTTPBasic()
 ADMIN_USER = "admin"
 ADMIN_PASS = "Fossalta58@"
 
+TG_BOT_KEY = os.getenv("TG_BOT_KEY")        # <— variabile env su Render
+bot = Bot(TG_BOT_KEY) if TG_BOT_KEY else None
+
 
 def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
-    """Confronta user/pass con le costanti sopra (hard-code)."""
-    valid_user = secrets.compare_digest(credentials.username, ADMIN_USER)
-    valid_pass = secrets.compare_digest(credentials.password, ADMIN_PASS)
-    if not (valid_user and valid_pass):
+    """Confronta user/pass con le costanti hard-code."""
+    ok_user = secrets.compare_digest(credentials.username, ADMIN_USER)
+    ok_pass = secrets.compare_digest(credentials.password, ADMIN_PASS)
+    if not (ok_user and ok_pass):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
             headers={"WWW-Authenticate": "Basic"},
         )
     return True
+
+
+def notify_user(phone: str, text: str):
+    """Invia un messaggio Telegram se abbiamo il chat_id per quel telefono."""
+    if not bot:
+        return
+    with Session() as db:
+        rec = db.query(TgChat).filter_by(phone=phone).first()
+        if rec:
+            try:
+                bot.send_message(chat_id=rec.chat_id, text=text)
+            except Exception as e:
+                print("Telegram send error:", e)
 
 
 # ------------------------------------------------------------------#
@@ -143,35 +161,8 @@ def upload_init(body: InitRequest):
 
 
 # ------------------------------------------------------------------#
-# ADMIN ENDPOINTS (Basic auth)
+# ADMIN ENDPOINTS
 # ------------------------------------------------------------------#
-@app.get("/api/admin/pending", dependencies=[Depends(verify_admin)])
-def list_pending(limit: int = 100):
-    with Session() as db:
-        q = (
-            db.query(Video, TimeSlot)
-            .join(TimeSlot, Video.slot_id == TimeSlot.id)
-            .filter(Video.status == "pending")
-            .order_by(TimeSlot.start_utc)
-            .limit(limit)
-        )
-        return [
-            {
-                "video_id": v.id,
-                "file_key": v.filename,
-                "slot_start_utc": s.start_utc.isoformat() + "Z",
-                "phone": v.phone,
-            }
-            for v, s in q
-        ]
-
-
-class ValidateBody(BaseModel):
-    video_id: int
-    action: str  # "approve" | "reject"
-
-
-
 @app.get("/api/admin/videos", dependencies=[Depends(verify_admin)])
 def list_videos(status: str = "pending", limit: int = 100):
     if status not in {"pending", "approved", "rejected"}:
@@ -196,6 +187,10 @@ def list_videos(status: str = "pending", limit: int = 100):
         ]
 
 
+class ValidateBody(BaseModel):
+    video_id: int
+    action: str  # "approve" | "reject"
+
 
 @app.post("/api/admin/validate", dependencies=[Depends(verify_admin)])
 def validate_video(body: ValidateBody):
@@ -209,18 +204,29 @@ def validate_video(body: ValidateBody):
         if video.status != "pending":
             raise HTTPException(409, "already processed")
 
+        slot = db.query(TimeSlot).filter_by(id=video.slot_id).first()
+        if not slot:
+            raise HTTPException(500, "slot not found")
+
         if body.action == "approve":
             video.status = "approved"
         else:
             video.status = "rejected"
-            slot = db.query(TimeSlot).filter_by(id=video.slot_id).first()
-            if slot and slot.booked > 0:
+            if slot.booked > 0:
                 slot.booked -= 1
 
         db.commit()
 
-        # ✱✱✱ prendi i valori PRIMA di chiudere la sessione
-        vid   = video.id
+        # valori prima di chiudere la sessione
+        vid = video.id
         vstat = video.status
+        phone = video.phone
+        slot_start = slot.start_utc
+
+    # --- Telegram notify fuori dalla sessione ---
+    if vstat == "approved":
+        notify_user(phone, f"✅ Il tuo video per le {slot_start:%d/%m %H:%M} è stato APPROVATO!")
+    else:
+        notify_user(phone, f"❌ Il tuo video per le {slot_start:%d/%m %H:%M} è stato RIFIUTATO.")
 
     return {"video_id": vid, "status": vstat}
