@@ -8,6 +8,9 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from models import Base, TimeSlot, Video
 from storage import new_file_key, presign_put
+import inspect, storage
+print("### STORAGE DEBUG:", storage._client.meta.config.signature_version, storage.__file__)
+
 
 # --------------------------- DB -----------------------------------
 DATABASE_URL = os.getenv("DATABASE_URL")
