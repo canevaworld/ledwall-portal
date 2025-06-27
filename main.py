@@ -169,7 +169,7 @@ def free_slots(
     else:
         start = today_utc
     end = start + datetime.timedelta(days=1)
-            print(f"[DEBUG] is_admin header? {'authorization' in request.headers}")
+    print(f"[DEBUG] is_admin header? {'authorization' in request.headers}")
     print(f"[DEBUG] days_ahead raw: {days_ahead}")
     print(f"[DEBUG] window: start={start.isoformat()} end={end.isoformat()}")
 
