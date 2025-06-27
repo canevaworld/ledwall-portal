@@ -87,9 +87,10 @@ def ensure_slots(db, start_dt: datetime.datetime, end_dt: datetime.datetime):
     • Se in ora locale Roma l’ora ∈ [09:00,18:00)  -> booked=0  (libero)
     • Altrimenti                                   -> booked=capacity (bloccato)
     """
-    ts   = round5(start_dt)
-    rows = []
-    while ts <= round5(end_dt):
+     ts   = round5(start_dt)
+     rows = []
+     # genera slot da start_dt (allineato a 5') **fino a end_dt escluso**
+     while ts < end_dt:
         local = ts.astimezone(TZ_IT)
         is_open = OPEN_HOUR_LOCAL <= local.hour < CLOSE_HOUR_LOCAL
         rows.append({
@@ -164,27 +165,26 @@ def free_slots(
         hour=0, minute=0, second=0, microsecond=0
     )
 
-    if is_admin and days_ahead is not None:
-        start = today_utc
-        end   = today_utc + datetime.timedelta(days=days_ahead + 1)
-    else:
-        start = today_utc
-        end   = today_utc + datetime.timedelta(days=1)
+if is_admin and days_ahead is not None:
+    # solo il giorno “oggi + days_ahead”
+    start = today_utc + datetime.timedelta(days=days_ahead)
+    end   = start + datetime.timedelta(days=1)
+else:
+    start = today_utc
+    end   = today_utc + datetime.timedelta(days=1)
 
     with Session() as db:
         # crea eventuali slot mancanti e ripulisce i pending scaduti
         ensure_slots(db, start, end)
         auto_release_expired(db)
 
-        q = (
-            select(TimeSlot)
-            .where(
-                TimeSlot.booked < TimeSlot.capacity,
-                TimeSlot.start_utc >= start,
-                TimeSlot.start_utc <  end,
-            )
-            .order_by(TimeSlot.start_utc)
-        )
+cond = [TimeSlot.start_utc >= start,
+        TimeSlot.start_utc <  end]
+
+if not is_admin:
+    cond.append(TimeSlot.booked < TimeSlot.capacity)
+
+q = select(TimeSlot).where(*cond).order_by(TimeSlot.start_utc)
         slots = db.execute(q).scalars().all()
 
     # ---------- output ----------
