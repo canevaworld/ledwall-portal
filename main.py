@@ -83,19 +83,19 @@ def round5(dt: datetime.datetime) -> datetime.datetime:
 
 def ensure_slots(db, start_dt: datetime.datetime, end_dt: datetime.datetime):
     """
-    Crea gli slot 5' fra start_dt e end_dt.
+    Crea gli slot 5' fra start_dt ed end_dt (end escluso):
     • Se in ora locale Roma l’ora ∈ [09:00,18:00)  -> booked=0  (libero)
     • Altrimenti                                   -> booked=capacity (bloccato)
     """
-     ts   = round5(start_dt)
-     rows = []
-     # genera slot da start_dt (allineato a 5') **fino a end_dt escluso**
-     while ts < end_dt:
+    ts = round5(start_dt)
+    rows = []
+    # genera slot da start_dt (allineato a 5') fino a end_dt escluso
+    while ts < end_dt:
         local = ts.astimezone(TZ_IT)
         is_open = OPEN_HOUR_LOCAL <= local.hour < CLOSE_HOUR_LOCAL
         rows.append({
             "start_utc": ts,
-            "booked":    0 if is_open else TimeSlot.capacity.default.arg  # 5
+            "booked":    0 if is_open else TimeSlot.capacity.default.arg
         })
         ts += datetime.timedelta(minutes=5)
 
