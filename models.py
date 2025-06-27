@@ -24,4 +24,8 @@ class Video(Base):
     slot     = relationship("TimeSlot")
     client_ip = Column(String)
     uploaded  = Column(Boolean, default=False)
-    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    created_at = Column(                   # UTC in automatico
+        DateTime(timezone=True),           # ① TIMESTAMPTZ
+        server_default=func.now(),         # ② lo fa Postgres
+        nullable=False,
+    )
