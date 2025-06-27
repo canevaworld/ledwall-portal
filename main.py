@@ -9,6 +9,7 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy import create_engine, select, func
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from zoneinfo import ZoneInfo  # in cima al file
 
 from zoneinfo import ZoneInfo        # ↙︎ gestione fuso orario
 TZ_IT = ZoneInfo("Europe/Rome")      # fuso “ufficiale” Italia
@@ -89,7 +90,6 @@ def ensure_slots(db, start_dt: datetime.datetime, end_dt: datetime.datetime):
     """
     ts = round5(start_dt)
     rows = []
-    # genera slot da start_dt (allineato a 5') fino a end_dt escluso
     while ts < end_dt:
         local = ts.astimezone(TZ_IT)
         is_open = OPEN_HOUR_LOCAL <= local.hour < CLOSE_HOUR_LOCAL
@@ -106,6 +106,7 @@ def ensure_slots(db, start_dt: datetime.datetime, end_dt: datetime.datetime):
             .on_conflict_do_nothing(index_elements=["start_utc"])
         )
         db.commit()
+
 
 
 def auto_release_expired(db):
@@ -147,11 +148,10 @@ def free_slots(
     days_ahead: int | None = Query(None, ge=0, le=30),
 ):
     """
-    • Utente normale  → mostra solo gli slot UTC della data odierna
-    • Admin (Basic-Auth) → può aggiungere ?days_ahead=N (0-30)
-      per vedere gli slot di (oggi + N)
+    • Utente normale  → mostra solo gli slot del giorno corrente
+    • Admin (Basic-Auth) → con ?days_ahead=N mostra solo gli slot di (oggi+N)
     """
-    # riconoscimento “al volo” admin
+    # 1) riconosci subito se è admin
     is_admin = False
     if "authorization" in request.headers:
         try:
@@ -161,35 +161,33 @@ def free_slots(
         except Exception:
             pass
 
-    # calcolo finestra: o solo oggi, o solo (oggi + days_ahead)
+    # 2) calcola l’intervallo [start, end)
     today_utc = datetime.datetime.utcnow().replace(
         hour=0, minute=0, second=0, microsecond=0
     )
     if is_admin and days_ahead is not None:
         start = today_utc + datetime.timedelta(days=days_ahead)
-        end   = start + datetime.timedelta(days=1)
     else:
         start = today_utc
-        end   = today_utc + datetime.timedelta(days=1)
+    end = start + datetime.timedelta(days=1)
 
+    # 3) crea slot e rimuovi pending scaduti
     with Session() as db:
-        # crea eventuali slot mancanti e ripulisci i pending scaduti
         ensure_slots(db, start, end)
         auto_release_expired(db)
 
-        # monta le condizioni di filtro
         cond = [
             TimeSlot.start_utc >= start,
             TimeSlot.start_utc <  end,
         ]
+        # gli utenti non-admin vedono solo quelli liberi
         if not is_admin:
             cond.append(TimeSlot.booked < TimeSlot.capacity)
 
-        # esegui la query
         q     = select(TimeSlot).where(*cond).order_by(TimeSlot.start_utc)
         slots = db.execute(q).scalars().all()
 
-    # ---------- output (sempre indentato dentro la funzione) ----------
+    # 4) output in fuso locale
     return [
         {
             "id":    s.id,
