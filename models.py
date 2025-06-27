@@ -1,5 +1,9 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
 from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.sql import func        # ← aggiungi questa riga
+
+Base = declarative_base()
+
 
 Base = declarative_base()
 
