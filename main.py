@@ -132,49 +132,70 @@ def root():
     return {"status": "ok", "message": "LedWall portal online ✔"}
 
 
+# --- extra import una tantum in testa al file ---
+from fastapi import Query
+from zoneinfo import ZoneInfo          # Python ≥ 3.9
+TZ_IT = ZoneInfo("Europe/Rome")        # fuso orario da usare nel JSON
+# ----------------------------------------------
+
 @app.get("/api/slots")
-def free_slots(request: Request,
-               days_ahead: int | None = Query(None, ge=0, le=30)):
+def free_slots(
+    request: Request,
+    days_ahead: int | None = Query(None, ge=0, le=30),
+):
     """
-    pubblico → sempre e solo il giorno corrente
-    admin    → può aggiungere ?days_ahead=N per estendere la finestra
+    • Utente normale  → mostra solo gli slot UTC della data odierna
+    • Admin (Basic-Auth) → può aggiungere ?days_ahead=N (0-30) per
+      estendere la finestra oltre oggi.
+    Il JSON restituisce lo start in fuso Europe/Rome.
     """
+    # ---------- riconoscimento admin “al volo” ----------
     is_admin = False
     if "authorization" in request.headers:
         try:
-            creds = security(request)
+            creds = security(request)   # HTTPBasic() già creato globalmente
             verify_admin(creds)
             is_admin = True
         except Exception:
             pass
 
-    today_utc = datetime.datetime.utcnow().replace(hour=0, minute=0,
-                                                   second=0, microsecond=0)
+    # ---------- calcolo finestra temporale ----------
+    today_utc = datetime.datetime.utcnow().replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
 
     if is_admin and days_ahead is not None:
-        start, end = today_utc, today_utc + datetime.timedelta(days=days_ahead + 1)
+        start = today_utc
+        end   = today_utc + datetime.timedelta(days=days_ahead + 1)
     else:
-        start, end = today_utc, today_utc + datetime.timedelta(days=1)
+        start = today_utc
+        end   = today_utc + datetime.timedelta(days=1)
 
     with Session() as db:
+        # crea eventuali slot mancanti e ripulisce i pending scaduti
         ensure_slots(db, start, end)
         auto_release_expired(db)
-        q = (select(TimeSlot)
-             .where(TimeSlot.booked < TimeSlot.capacity,
-                    TimeSlot.start_utc >= start,
-                    TimeSlot.start_utc <  end)
-             .order_by(TimeSlot.start_utc))
+
+        q = (
+            select(TimeSlot)
+            .where(
+                TimeSlot.booked < TimeSlot.capacity,
+                TimeSlot.start_utc >= start,
+                TimeSlot.start_utc <  end,
+            )
+            .order_by(TimeSlot.start_utc)
+        )
         slots = db.execute(q).scalars().all()
 
-    out = []
-    for s in slots:
-        local_dt = s.start_utc.astimezone(TZ_IT)
-        out.append({
+    # ---------- output ----------
+    return [
+        {
             "id":    s.id,
-            "start": local_dt.isoformat(timespec="minutes"),
+            "start": s.start_utc.astimezone(TZ_IT).isoformat(timespec="minutes"),
             "free":  s.capacity - s.booked,
-        })
-    return out
+        }
+        for s in slots
+    ]
 
 
 # ------------------------------------------------------------------#
