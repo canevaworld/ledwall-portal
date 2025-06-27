@@ -22,7 +22,11 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL not set")
 
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+    connect_args={"options": "-c timezone=Europe/Rome"},
+)
 Session = sessionmaker(bind=engine)
 Base.metadata.create_all(engine)
 
