@@ -83,11 +83,7 @@ def round5(dt: datetime.datetime) -> datetime.datetime:
 
 
 def ensure_slots(db, start_dt: datetime.datetime, end_dt: datetime.datetime):
-    """
-    Crea gli slot 5' fra start_dt ed end_dt (end escluso):
-    • Se in ora locale Roma l’ora ∈ [09:00,18:00)  -> booked=0  (libero)
-    • Altrimenti                                   -> booked=capacity (bloccato)
-    """
+    print(f"[DEBUG ensure_slots] start_dt={start_dt.isoformat()} end_dt={end_dt.isoformat()}")
     ts = round5(start_dt)
     rows = []
     while ts < end_dt:
@@ -98,7 +94,6 @@ def ensure_slots(db, start_dt: datetime.datetime, end_dt: datetime.datetime):
             "booked":    0 if is_open else TimeSlot.capacity.default.arg
         })
         ts += datetime.timedelta(minutes=5)
-
     if rows:
         db.execute(
             pg_insert(TimeSlot)
@@ -145,22 +140,19 @@ from fastapi import Query, Request
 @app.get("/api/slots")
 def free_slots(
     request: Request,
-    days_ahead: int | None = Query(None, ge=0, le=30)):
-    """
-    • Utente normale  → mostra solo gli slot del giorno corrente
-    • Admin (Basic-Auth) → con ?days_ahead=N mostra solo gli slot di (oggi+N)
-    """
-    # 1) riconosci subito se è admin
+    days_ahead: int | None = Query(None, ge=0, le=30),
+):
+    # 1) riconosciamo subito se è admin
     is_admin = False
     if "authorization" in request.headers:
         try:
-            creds = security(request)
+            creds = security(request)    # HTTPBasic()
             verify_admin(creds)
             is_admin = True
         except Exception:
             pass
 
-    # 2) calcola l’intervallo [start, end)
+    # 2) calcolo finestra [start, end)
     today_utc = datetime.datetime.utcnow().replace(
         hour=0, minute=0, second=0, microsecond=0
     )
@@ -169,27 +161,26 @@ def free_slots(
     else:
         start = today_utc
     end = start + datetime.timedelta(days=1)
-    print(f"[DEBUG] is_admin header? {'authorization' in request.headers}")
-    print(f"[DEBUG] days_ahead raw: {days_ahead}")
-    print(f"[DEBUG] window: start={start.isoformat()} end={end.isoformat()}")
 
-    # 3) crea slot e rimuovi pending scaduti
+    # 3) **DEBUG** qui sì: stampiamo start/end e is_admin
+    print(f"[DEBUG free_slots] is_admin={is_admin} days_ahead={days_ahead}")
+    print(f"[DEBUG free_slots] window start={start.isoformat()} end={end.isoformat()}")
+
     with Session() as db:
+        # 4) debug in ensure_slots per controllare che arrivi la data giusta
+        print(f"[DEBUG ensure_slots] will create slots from {start.isoformat()} to {end.isoformat()}")
         ensure_slots(db, start, end)
         auto_release_expired(db)
 
-        cond = [
-            TimeSlot.start_utc >= start,
-            TimeSlot.start_utc <  end,
-        ]
-        # gli utenti non-admin vedono solo quelli liberi
+        # 5) filtro
+        cond = [TimeSlot.start_utc >= start, TimeSlot.start_utc < end]
         if not is_admin:
             cond.append(TimeSlot.booked < TimeSlot.capacity)
 
-        q     = select(TimeSlot).where(*cond).order_by(TimeSlot.start_utc)
+        q = select(TimeSlot).where(*cond).order_by(TimeSlot.start_utc)
         slots = db.execute(q).scalars().all()
 
-    # 4) output in fuso locale
+    # 6) output
     return [
         {
             "id":    s.id,
@@ -198,6 +189,7 @@ def free_slots(
         }
         for s in slots
     ]
+
 
 
 # ------------------------------------------------------------------#
