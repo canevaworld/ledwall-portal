@@ -4,7 +4,7 @@ import os, datetime, secrets, smtplib, ipaddress
 from email.message import EmailMessage
 
 from fastapi import FastAPI, HTTPException, Depends, status, Request, Query, Path
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
+security = HTTPBasic()
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import create_engine, select, func
 from sqlalchemy.orm import sessionmaker
@@ -135,44 +135,47 @@ from zoneinfo import ZoneInfo          # Python ≥ 3.9
 TZ_IT = ZoneInfo("Europe/Rome")        # fuso orario da usare nel JSON
 # ----------------------------------------------
 
-from fastapi import Query, Request
+from base64 import b64decode
 
 @app.get("/api/slots")
 def free_slots(
     request: Request,
     days_ahead: int | None = Query(None, ge=0, le=30),
 ):
-    # 1) riconosciamo subito se è admin
+    """
+    • Utente normale  → mostra solo gli slot del giorno corrente
+    • Admin (Basic-Auth) → con ?days_ahead=N (0-30) mostra solo gli slot di (oggi+N)
+    """
+    # ———————————————— manual Basic auth parsing ————————————————
     is_admin = False
-    if "authorization" in request.headers:
+    auth = request.headers.get("authorization")
+    if auth and auth.lower().startswith("basic "):
         try:
-            creds = security(request)    # HTTPBasic()
-            verify_admin(creds)
-            is_admin = True
+            creds = b64decode(auth.split(" ",1)[1]).decode()
+            user, pw = creds.split(":",1)
+            if secrets.compare_digest(user, ADMIN_USER) and secrets.compare_digest(pw, ADMIN_PASS):
+                is_admin = True
         except Exception:
             pass
 
-    # 2) calcolo finestra [start, end)
-    today_utc = datetime.datetime.utcnow().replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
+    # ———————————————— calcolo finestra [start,end) ————————————————
+    today_utc = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     if is_admin and days_ahead is not None:
         start = today_utc + datetime.timedelta(days=days_ahead)
     else:
         start = today_utc
     end = start + datetime.timedelta(days=1)
 
-    # 3) **DEBUG** qui sì: stampiamo start/end e is_admin
+    # ———————————————— DEBUG (opzionale) ————————————————
     print(f"[DEBUG free_slots] is_admin={is_admin} days_ahead={days_ahead}")
-    print(f"[DEBUG free_slots] window start={start.isoformat()} end={end.isoformat()}")
+    print(f"[DEBUG free_slots] window start={start} end={end}")
 
+    # ———————————————— crea/ripulisci slot ————————————————
     with Session() as db:
-        # 4) debug in ensure_slots per controllare che arrivi la data giusta
-        print(f"[DEBUG ensure_slots] will create slots from {start.isoformat()} to {end.isoformat()}")
+        print(f"[DEBUG ensure_slots] start_dt={start} end_dt={end}")
         ensure_slots(db, start, end)
         auto_release_expired(db)
 
-        # 5) filtro
         cond = [TimeSlot.start_utc >= start, TimeSlot.start_utc < end]
         if not is_admin:
             cond.append(TimeSlot.booked < TimeSlot.capacity)
@@ -180,7 +183,7 @@ def free_slots(
         q = select(TimeSlot).where(*cond).order_by(TimeSlot.start_utc)
         slots = db.execute(q).scalars().all()
 
-    # 6) output
+    # ———————————————— output ————————————————
     return [
         {
             "id":    s.id,
