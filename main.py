@@ -14,6 +14,8 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from models import Base, TimeSlot, Video
 from storage import new_file_key, presign_put
+from zoneinfo import ZoneInfo     # <— aggiungi questa riga
+TZ_IT = ZoneInfo("Europe/Rome")   #  fuso orario Italia
 
 # ------------------------------------------------------------------#
 # CONFIG
@@ -172,10 +174,15 @@ def free_slots(request: Request,
              .order_by(TimeSlot.start_utc))
         slots = db.execute(q).scalars().all()
 
-    return [{"id": s.id,
-             "start_utc": s.start_utc.isoformat()+"Z",
-             "free": s.capacity - s.booked}
-            for s in slots]
+out = []
+for s in slots:
+    local_dt = s.start_utc.astimezone(TZ_IT)             # UTC → ITA
+    out.append({
+        "id":    s.id,
+        "start": local_dt.isoformat(timespec="minutes"), # es: 2025-06-27T09:00+02:00
+        "free":  s.capacity - s.booked,
+    })
+return out
 
 # ------------------------------------------------------------------#
 #  UPLOAD FLOW
@@ -269,8 +276,11 @@ def validate_video(body:ValidateBody):
 
         if body.action=="approve":
             v.status = "approved"
-            mail_txt = (f"Il tuo video è stato APPROVATO e andrà in onda "
-                        f"alle {s.start_utc:%H:%M} UTC del {s.start_utc:%d/%m}.")
+            slot_it = s.start_utc.astimezone(TZ_IT)
+mail_txt = (
+    f"Il tuo video è stato APPROVATO e sarà trasmesso "
+    f"alle {slot_it:%H:%M} del {slot_it:%d/%m}."
+)
         else:
             v.status = "rejected"
             if s.booked>0: s.booked -= 1
