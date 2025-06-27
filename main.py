@@ -139,6 +139,8 @@ from zoneinfo import ZoneInfo          # Python ≥ 3.9
 TZ_IT = ZoneInfo("Europe/Rome")        # fuso orario da usare nel JSON
 # ----------------------------------------------
 
+from fastapi import Query, Request
+
 @app.get("/api/slots")
 def free_slots(
     request: Request,
@@ -146,32 +148,29 @@ def free_slots(
 ):
     """
     • Utente normale  → mostra solo gli slot UTC della data odierna
-    • Admin (Basic-Auth) → può aggiungere ?days_ahead=N (0-30) per
-      estendere la finestra oltre oggi.
-    Il JSON restituisce lo start in fuso Europe/Rome.
+    • Admin (Basic-Auth) → può aggiungere ?days_ahead=N (0-30)
+      per vedere gli slot di (oggi + N)
     """
-    # ---------- riconoscimento admin “al volo” ----------
+    # riconoscimento “al volo” admin
     is_admin = False
     if "authorization" in request.headers:
         try:
-            creds = security(request)   # HTTPBasic() già creato globalmente
+            creds = security(request)
             verify_admin(creds)
             is_admin = True
         except Exception:
             pass
 
-    # ---------- calcolo finestra temporale ----------
+    # calcolo finestra: o solo oggi, o solo (oggi + days_ahead)
     today_utc = datetime.datetime.utcnow().replace(
         hour=0, minute=0, second=0, microsecond=0
     )
-
-if is_admin and days_ahead is not None:
-    # solo il giorno “oggi + days_ahead”
-    start = today_utc + datetime.timedelta(days=days_ahead)
-    end   = start + datetime.timedelta(days=1)
-else:
-    start = today_utc
-    end   = today_utc + datetime.timedelta(days=1)
+    if is_admin and days_ahead is not None:
+        start = today_utc + datetime.timedelta(days=days_ahead)
+        end   = start + datetime.timedelta(days=1)
+    else:
+        start = today_utc
+        end   = today_utc + datetime.timedelta(days=1)
 
     with Session() as db:
         ensure_slots(db, start, end)
@@ -179,7 +178,7 @@ else:
 
         cond = [
             TimeSlot.start_utc >= start,
-            TimeSlot.start_utc < end
+            TimeSlot.start_utc < end,
         ]
         if not is_admin:
             cond.append(TimeSlot.booked < TimeSlot.capacity)
@@ -191,7 +190,7 @@ else:
         )
         slots = db.execute(q).scalars().all()
 
-    # ---------- output ----------
+    # ---------- output (sempre indentato dentro la funzione) ----------
     return [
         {
             "id":    s.id,
