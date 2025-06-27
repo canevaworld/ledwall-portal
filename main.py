@@ -4,6 +4,7 @@ import os, datetime, secrets, smtplib, ipaddress
 from email.message import EmailMessage
 
 from fastapi import FastAPI, HTTPException, Depends, status, Request, Query, Path
+from fastapi.security import HTTPBasic, HTTPBasicCredentials  # <<<<<<<<<< aggiungi qui
 security = HTTPBasic()
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import create_engine, select, func
