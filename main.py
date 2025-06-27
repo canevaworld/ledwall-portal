@@ -204,5 +204,17 @@ def validate_video(body:ValidateBody):
                       "quanto non conforme alle policy.")
         db.commit()
 
-    send_mail(v.email, mail_txt)
-    return {"video_id":v.id,"status":v.status}
+        # prendi i valori PRIMA di chiudere la sessione
+        vid        = v.id
+        email_addr = v.email
+        slot_dt    = s.start_utc
+        status_now = v.status
+        mail_txt   = (f"Il tuo video è stato APPROVATO e sarà trasmesso "
+                      f"alle {slot_dt:%H:%M} UTC del {slot_dt:%d/%m}.") \
+                     if status_now == "approved" else \
+                     ("Siamo spiacenti, il tuo video è stato RIFIUTATO "
+                      "in quanto non conforme alle policy.")
+    #  ← siamo fuori dal 'with', usiamo SOLO le variabili scalari
+    send_mail(email_addr, mail_txt)
+    return {"video_id": vid, "status": status_now}
+
