@@ -145,8 +145,9 @@ from fastapi import Query, Request
 @app.get("/api/slots")
 def free_slots(
     request: Request,
-    days_ahead: int | None = Query(None, ge=0, le=30),
-):
+    days_ahead: int | None = Query(None, ge=0, le=30)):
+    print(f"[DEBUG] is_admin header? { 'authorization' in request.headers }")
+    print(f"[DEBUG] days_ahead raw: {days_ahead}")
     """
     • Utente normale  → mostra solo gli slot del giorno corrente
     • Admin (Basic-Auth) → con ?days_ahead=N mostra solo gli slot di (oggi+N)
@@ -162,6 +163,7 @@ def free_slots(
             pass
 
     # 2) calcola l’intervallo [start, end)
+    print(f"[DEBUG] window: start={start.isoformat()} end={end.isoformat()}")
     today_utc = datetime.datetime.utcnow().replace(
         hour=0, minute=0, second=0, microsecond=0
     )
