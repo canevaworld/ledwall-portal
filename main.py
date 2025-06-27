@@ -173,21 +173,20 @@ def free_slots(
         end   = today_utc + datetime.timedelta(days=1)
 
     with Session() as db:
+        # crea eventuali slot mancanti e ripulisci i pending scaduti
         ensure_slots(db, start, end)
         auto_release_expired(db)
 
+        # monta le condizioni di filtro
         cond = [
             TimeSlot.start_utc >= start,
-            TimeSlot.start_utc < end,
+            TimeSlot.start_utc <  end,
         ]
         if not is_admin:
             cond.append(TimeSlot.booked < TimeSlot.capacity)
 
-        q = (
-            select(TimeSlot)
-            .where(*cond)
-            .order_by(TimeSlot.start_utc)
-        )
+        # esegui la query
+        q     = select(TimeSlot).where(*cond).order_by(TimeSlot.start_utc)
         slots = db.execute(q).scalars().all()
 
     # ---------- output (sempre indentato dentro la funzione) ----------
