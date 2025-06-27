@@ -41,6 +41,15 @@ MAX_SLOTS_PER_IP         = 5      # slot “ancora vivi” (pending + approved)
 UPLOAD_GRACE_MIN         = 5      # minuti concessi per completare l’upload
 BUSINESS_START, BUSINESS_END = 9, 18   # 09:00 → 18:00
 
+# fascia oraria “libera” in ora locale (Europe/Rome)
+OPEN_HOUR_LOCAL  = 9      # 09:00
+CLOSE_HOUR_LOCAL = 18     # 18:00
+
+# offset attuale fra Roma e UTC (+1 d’inverno, +2 d’estate).
+# Se ti va bene ignorare l’ora legale e tenere sempre +1 usa 1,
+# altrimenti alza a 2 finché siamo in CEST.
+TZ_OFFSET = 2             # cambia manualmente quando passa l’ora legale
+
 # ------------------------------------------------------------------#
 # UTIL
 # ------------------------------------------------------------------#
@@ -73,21 +82,27 @@ def round5(dt: datetime.datetime) -> datetime.datetime:
                    seconds=dt.second,
                    microseconds=dt.microsecond) + tr(minutes=5)
 
-def ensure_slots(db, start_dt: datetime.datetime, end_dt: datetime.datetime):
-    """Crea gli slot mancanti.  Fuori fascia 09-18 ⇒ booked=capacity."""
-    ts, rows = round5(start_dt), []
+def ensure_slots(db, start_dt, end_dt):
+    """
+    Crea tutti gli slot 5' fra start_dt e end_dt.
+
+    • Se l’ora (in locale) è fra 09:00 e 17:55  → booked = 0  (libero)
+    • Altrimenti                               → booked = capacity (bloccato)
+    """
+    ts     = round5(start_dt)
+    rows   = []
+    CAP    = TimeSlot.capacity.property.columns[0].default.arg   # 5 di default
+    # calcoliamo la finestra valida in UTC
+    open_utc  = (OPEN_HOUR_LOCAL  - TZ_OFFSET) % 24   # 07 se TZ_OFFSET = 2
+    close_utc = (CLOSE_HOUR_LOCAL - TZ_OFFSET) % 24   # 16 se TZ_OFFSET = 2
+
     while ts <= round5(end_dt):
-        blocked = ts.hour < BUSINESS_START or ts.hour >= BUSINESS_END
+        hr = ts.hour
+        is_open = open_utc <= hr < close_utc
         rows.append({
             "start_utc": ts,
-            # se “bloccato”, occupo subito tutto lo slot
-            "booked":     TimeSlot.capacity.property.columns[0].default.arg
-                          if not blocked else
-                          TimeSlot.capacity.property.columns[0].default.arg,  # 0 o 5
-            "capacity": TimeSlot.capacity.property.columns[0].default.arg
+            "booked": 0 if is_open else CAP
         })
-        if blocked:
-            rows[-1]["booked"] = rows[-1]["capacity"]
         ts += datetime.timedelta(minutes=5)
 
     if rows:
@@ -97,7 +112,7 @@ def ensure_slots(db, start_dt: datetime.datetime, end_dt: datetime.datetime):
             .on_conflict_do_nothing(index_elements=["start_utc"])
         )
         db.commit()
-
+        
 def auto_release_expired(db):
     limit = datetime.datetime.utcnow() - datetime.timedelta(minutes=UPLOAD_GRACE_MIN)
     stale = (db.query(Video)
