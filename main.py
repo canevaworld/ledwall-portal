@@ -263,6 +263,28 @@ def validate_video(body:ValidateBody):
     send_mail(mail_to, mail_txt)
     return {"video_id": vid, "status": status_now}
 
+# --- poco sotto gli altri endpoint admin -----------------------------
+class SlotAction(BaseModel):
+    slot_id: int
+    action:  str  # "block" = forza booked = capacity | "free" = booked = 0
+
+@app.post("/api/admin/slot", dependencies=[Depends(verify_admin)])
+def slot_admin(body: SlotAction):
+    if body.action not in {"block", "free"}:
+        raise HTTPException(400, "action doit être 'block' or 'free'")
+    with Session() as db:
+        s = db.query(TimeSlot).filter_by(id=body.slot_id).first()
+        if not s:
+            raise HTTPException(404, "slot non trovato")
+
+        if body.action == "block":
+            s.booked = s.capacity          # occupato al 100 %
+        else:                              # "free"
+            s.booked = 0
+
+        db.commit()
+    return {"slot_id": body.slot_id, "status": body.action}
+
 # -------- sblocca manualmente uno slot “chiuso” (booked=capacity) ---
 @app.post("/api/admin/slots/{slot_id}/free", dependencies=[Depends(verify_admin)])
 def free_slot(slot_id: int = Path(..., ge=1)):
