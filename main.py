@@ -174,17 +174,21 @@ else:
     end   = today_utc + datetime.timedelta(days=1)
 
     with Session() as db:
-        # crea eventuali slot mancanti e ripulisce i pending scaduti
         ensure_slots(db, start, end)
         auto_release_expired(db)
 
-cond = [TimeSlot.start_utc >= start,
-        TimeSlot.start_utc <  end]
+        cond = [
+            TimeSlot.start_utc >= start,
+            TimeSlot.start_utc < end
+        ]
+        if not is_admin:
+            cond.append(TimeSlot.booked < TimeSlot.capacity)
 
-if not is_admin:
-    cond.append(TimeSlot.booked < TimeSlot.capacity)
-
-q = select(TimeSlot).where(*cond).order_by(TimeSlot.start_utc)
+        q = (
+            select(TimeSlot)
+            .where(*cond)
+            .order_by(TimeSlot.start_utc)
+        )
         slots = db.execute(q).scalars().all()
 
     # ---------- output ----------
