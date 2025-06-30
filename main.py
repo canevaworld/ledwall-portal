@@ -26,10 +26,16 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL not set")
 
-engine = create_engine(
-    DATABASE_URL,
-    pool_pre_ping=True,
-    connect_args={"options": "-c timezone='Europe/Rome'"}  # il DB resta in UTC
+from sqlalchemy import event
+
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+
+@event.listens_for(engine, "connect")
+def _set_timezone(dbapi_conn, connection_record):
+    # psycopg2 connection
+    cursor = dbapi_conn.cursor()
+    cursor.execute("SET TIME ZONE 'Europe/Rome';")
+    cursor.close()
 )
 Session = sessionmaker(bind=engine)
 Base.metadata.create_all(engine)
