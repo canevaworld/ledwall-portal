@@ -160,19 +160,19 @@ def free_slots(
             pass
 
     # 2) calcola l’intervallo [start, end) in UTC basandosi sul giorno locale
-+    #    (da 00:00 a 24:00 ora di Roma)
-+    # giorno di partenza in locale
-+    local_midnight = (
-+        datetime.datetime.now(TZ_IT)
-+        .replace(hour=0, minute=0, second=0, microsecond=0)
-+    )
-+    # se admin e days_ahead, sposto il giorno locale
-+    target_local = (
-+        local_midnight + datetime.timedelta(days=days_ahead)
-+    ) if (is_admin and days_ahead is not None) else local_midnight
-+    # converto in UTC per i filtri del DB
-+    start = target_local.astimezone(datetime.timezone.utc)
-+    end   = (target_local + datetime.timedelta(days=1)).astimezone(datetime.timezone.utc)
+    #    (da 00:00 a 24:00 ora di Roma)
+    # giorno di partenza in locale
+    local_midnight = (
+        datetime.datetime.now(TZ_IT)
+        .replace(hour=0, minute=0, second=0, microsecond=0)
+    )
+    # se admin e days_ahead, sposto il giorno locale
+    target_local = (
+        local_midnight + datetime.timedelta(days=days_ahead)
+    ) if (is_admin and days_ahead is not None) else local_midnight
+    # converto in UTC per i filtri del DB
+    start = target_local.astimezone(datetime.timezone.utc)
+    end   = (target_local + datetime.timedelta(days=1)).astimezone(datetime.timezone.utc)
 
     # ———————————————— DEBUG (opzionale) ————————————————
     print(f"[DEBUG free_slots] is_admin={is_admin} days_ahead={days_ahead}")
