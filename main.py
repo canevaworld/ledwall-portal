@@ -29,7 +29,7 @@ if not DATABASE_URL:
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,
-    connect_args={"options": "-c timezone=UTC"}   # il DB resta in UTC
+    connect_args={"options": "-c timezone='Europe/Rome'"}  # il DB resta in UTC
 )
 Session = sessionmaker(bind=engine)
 Base.metadata.create_all(engine)
