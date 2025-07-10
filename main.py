@@ -20,19 +20,13 @@ from storage  import new_file_key, presign_put
 
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI()
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://ledwall-site.pages.dev",        # dominio Pages
-    ],
+    allow_origin_regex=r"^https://.*\.pages\.dev$",   # accetta tutti i *.pages.dev
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
 # ------------------------------------------------------------------#
 # CONFIG
 # ------------------------------------------------------------------#
