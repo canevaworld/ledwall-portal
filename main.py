@@ -18,6 +18,20 @@ TZ_IT = ZoneInfo("Europe/Rome")      # fuso “ufficiale” Italia
 from models   import Base, TimeSlot, Video
 from storage  import new_file_key, presign_put
 
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://ledwall-site.pages.dev",        # dominio Pages
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 # ------------------------------------------------------------------#
 # CONFIG
