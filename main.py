@@ -1,4 +1,18 @@
 # main.py – LedWall backend / e-mail, auto-release, IP-limit, fascia 09-18
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"^https://.*\.pages\.dev$",   # qualunque *.pages.dev
+    allow_methods=["GET"],        # basta il GET per /api/slots
+    allow_headers=["*"],
+    allow_credentials=False,      # non mandiamo cookie
+)
+
 import os, datetime, secrets, smtplib, ipaddress
 from email.message import EmailMessage
 
@@ -10,20 +24,6 @@ from sqlalchemy import create_engine, select, func
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from zoneinfo import ZoneInfo
-
-# ───────────────────────────────────────────────────────────────
-# 1) CREA subito l’app FastAPI
-# ───────────────────────────────────────────────────────────────
-app = FastAPI()
-
-# 2) CORS → dopo aver creato app
-app.add_middleware(
-    CORSMiddleware,
-    allow_origin_regex=r"^https://.*\.pages\.dev$",   # accetta tutti i *.pages.dev
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 TZ_IT = ZoneInfo("Europe/Rome")      # fuso “ufficiale” Italia
 
