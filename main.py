@@ -1,25 +1,22 @@
 # main.py – LedWall backend / e-mail, auto-release, IP-limit, fascia 09-18
-
 import os, datetime, secrets, smtplib, ipaddress
 from email.message import EmailMessage
 
 from fastapi import FastAPI, HTTPException, Depends, status, Request, Query, Path
-from fastapi.security import HTTPBasic, HTTPBasicCredentials  # <<<<<<<<<< aggiungi qui
-security = HTTPBasic()
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.middleware.cors import CORSMiddleware          #  ← già qui
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import create_engine, select, func
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from zoneinfo import ZoneInfo  # in cima al file
+from zoneinfo import ZoneInfo
 
-from zoneinfo import ZoneInfo        # ↙︎ gestione fuso orario
-TZ_IT = ZoneInfo("Europe/Rome")      # fuso “ufficiale” Italia
+# ───────────────────────────────────────────────────────────────
+# 1) CREA subito l’app FastAPI
+# ───────────────────────────────────────────────────────────────
+app = FastAPI()
 
-from models   import Base, TimeSlot, Video
-from storage  import new_file_key, presign_put
-
-from fastapi.middleware.cors import CORSMiddleware
-
+# 2) CORS → dopo aver creato app
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"^https://.*\.pages\.dev$",   # accetta tutti i *.pages.dev
@@ -27,6 +24,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+TZ_IT = ZoneInfo("Europe/Rome")      # fuso “ufficiale” Italia
+
+from models   import Base, TimeSlot, Video
+from storage  import new_file_key, presign_put
+
 # ------------------------------------------------------------------#
 # CONFIG
 # ------------------------------------------------------------------#
