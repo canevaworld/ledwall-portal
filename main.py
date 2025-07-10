@@ -54,7 +54,7 @@ def _set_timezone(dbapi_conn, connection_record):
 Session = sessionmaker(bind=engine)
 Base.metadata.create_all(engine)
 
-app                      = FastAPI()
+# app                      = FastAPI()
 security                 = HTTPBasic()
 ADMIN_USER, ADMIN_PASS   = "admin", "Fossalta58@"
 
