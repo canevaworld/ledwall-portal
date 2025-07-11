@@ -8,7 +8,7 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"^https://.*\.pages\.dev$",   # qualunque *.pages.dev
-    allow_methods=["GET"],        # basta il GET per /api/slots
+    allow_methods=["*"],        # basta il GET per /api/slots
     allow_headers=["*"],
     allow_credentials=False,      # non mandiamo cookie
 )
