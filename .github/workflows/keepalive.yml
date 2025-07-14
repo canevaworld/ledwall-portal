@@ -1,11 +1,8 @@
-# .github/workflows/keepalive.yml
 name: KeepRenderAwake
 
 on:
   schedule:
-    # ogni 14 minuti (UTC)
     - cron: '*/14 * * * *'
-  # permette l'esecuzione manuale dal tab “Actions”
   workflow_dispatch:
 
 jobs:
