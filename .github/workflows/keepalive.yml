@@ -2,7 +2,7 @@ name: KeepRenderAwake
 on:
   schedule:
     # ogni 14 minuti (Render si addormenta dopo 15)
-    - cron: '*/14 * * * *'
+    - cron: '*/12 * * * *'
 jobs:
   ping:
     runs-on: ubuntu-latest
