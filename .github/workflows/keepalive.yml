@@ -1,0 +1,12 @@
+name: KeepRenderAwake
+on:
+  schedule:
+    # ogni 14 minuti (Render si addormenta dopo 15)
+    - cron: '*/14 * * * *'
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: curl ledwall-portal
+        run: |
+          curl -fsSL https://ledwall-portal.onrender.com/ || true
